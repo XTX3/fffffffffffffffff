@@ -1,0 +1,176 @@
+
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>📱 عرض مواصفات الهاتف الموصل</title>
+  <style>
+    body {
+      font-family: "Tajawal", Arial, sans-serif;
+      text-align: center;
+      background: #f4f4f4;
+      color: #333;
+      direction: rtl;
+      padding: 20px;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 10px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      transition: background 0.3s ease;
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    input[type="text"] {
+      width: 80%;
+      max-width: 400px;
+      padding: 12px;
+      font-size: 16px;
+      margin-top: 20px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      text-align: right;
+    }
+    .box {
+      background: #fff;
+      display: inline-block;
+      padding: 20px;
+      margin: 20px auto;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      width: 90%;
+      max-width: 600px;
+      text-align: right;
+      min-height: 120px;
+    }
+    .title {
+      font-weight: bold;
+      margin-bottom: 10px;
+      font-size: 18px;
+      color: #007bff;
+    }
+    ul { padding-right: 20px; text-align: right; }
+  </style>
+</head>
+<body>
+
+  <h1>🔌 قم بتوصيل الهاتف أو ابحث عن مواصفاته يدوياً</h1>
+
+  <button id="connectBtn">توصيل الهاتف عبر USB</button>
+
+  <br/>
+
+  <input type="text" id="manualSearch" placeholder="أدخل اسم الهاتف يدويًا" />
+  <button id="manualSearchBtn">بحث يدوي</button>
+
+  <div class="box" id="deviceInfo">📢 لم يتم توصيل أي جهاز بعد</div>
+  <div class="box" id="specsInfo">ℹ️ المواصفات ستظهر هنا بعد العثور عليها</div>
+
+  <script>
+    const connectBtn = document.getElementById('connectBtn');
+    const manualSearchBtn = document.getElementById('manualSearchBtn');
+    const manualSearchInput = document.getElementById('manualSearch');
+    const deviceInfo = document.getElementById('deviceInfo');
+    const specsInfo = document.getElementById('specsInfo');
+
+    // دالة عرض المواصفات بشكل جميل
+    function displaySpecs(d) {
+      let specsHTML = `<div class="title">${d.brand} – ${d.phone_name}</div>`;
+      specsHTML += `<ul>`;
+
+      // بعض الأقسام المهمة فقط
+      const importantKeys = ["Display", "Platform", "Memory", "Main Camera", "Battery"];
+      d.specifications.forEach(section => {
+        if (importantKeys.includes(section.title)) {
+          specsHTML += `<li><b>${section.title}:</b> ${section.specs[0].val.join(", ")}</li>`;
+        }
+      });
+
+      specsHTML += `</ul>`;
+      specsInfo.innerHTML = specsHTML;
+    }
+
+    // البحث في API مع تجربة عدة أسماء
+    async function searchWithFallback(names) {
+      for (let name of names) {
+        specsInfo.innerHTML = "⏳ جارٍ البحث عن مواصفات: " + name;
+        let found = await fetchSpecs(name);
+        if (found) return; // توقف عند العثور على النتيجة
+      }
+      specsInfo.innerHTML = "⚠️ لم يتم العثور على أي مواصفات. جرب كتابة اسم الهاتف بشكل مختلف.";
+    }
+
+    // البحث في API
+    async function fetchSpecs(name) {
+      try {
+        const res = await fetch(`https://api-mobilespecs.azharimm.dev/v2/search?query=${encodeURIComponent(name)}`);
+        const data = await res.json();
+
+        if (!data.data || !data.data.phones || data.data.phones.length === 0) return false;
+
+        const slug = data.data.phones[0].slug;
+        const detailRes = await fetch(`https://api-mobilespecs.azharimm.dev/v2/${slug}`);
+        const detail = await detailRes.json();
+
+        displaySpecs(detail.data);
+        return true;
+      } catch (err) {
+        console.error("API Error:", err);
+        return false;
+      }
+    }
+
+    // التعامل مع توصيل الهاتف عبر USB
+    connectBtn.addEventListener('click', async () => {
+      if (!navigator.usb) {
+        deviceInfo.innerHTML = "❌ متصفحك لا يدعم ميزة USB. يرجى استخدام Google Chrome على سطح المكتب.";
+        return;
+      }
+
+      try {
+        const device = await navigator.usb.requestDevice({ filters: [] });
+        const rawName = device.productName || "هاتف غير معروف";
+        const manufacturer = device.manufacturerName || "مصنّع غير معروف";
+
+        deviceInfo.innerHTML = `
+          <div class="title">📡 تم التعرف على الجهاز</div>
+          <b>الاسم:</b> ${rawName}<br/>
+          <b>الشركة:</b> ${manufacturer}<br/>
+        `;
+
+        let possibleNames = [
+          rawName,
+          `${manufacturer} ${rawName}`,
+          rawName.replace(/\s+/g, ''),
+          rawName.replace(/\d+C/, '10C')
+        ];
+
+        searchWithFallback(possibleNames);
+
+      } catch (err) {
+        deviceInfo.innerHTML = "❌ لم يتم اختيار أي جهاز أو تم رفض الإذن.";
+        specsInfo.innerHTML = "";
+        console.error(err);
+      }
+    });
+
+    // البحث اليدوي
+    manualSearchBtn.addEventListener('click', () => {
+      const name = manualSearchInput.value.trim();
+      if (!name) {
+        alert("يرجى إدخال اسم الهاتف للبحث");
+        return;
+      }
+      deviceInfo.innerHTML = "🔎 البحث اليدوي عن: " + name;
+      searchWithFallback([name]);
+    });
+  </script>
+
+</body>
+</html>
